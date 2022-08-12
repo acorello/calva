@@ -2,6 +2,7 @@
 
 (ns notebook)
 
+"string1" "string"
 ;; A line comment
 ;; block
 
@@ -12,7 +13,7 @@
    :deeper {:a 1, "foo" :bar, [1 2 3] (vec (range 2000))}})
 
 ;; Line comment, line 1
-
+;; 
 ;; Line comment, line 2
 (defn foo []
   (println "bar"))

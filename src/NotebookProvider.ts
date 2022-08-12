@@ -33,33 +33,73 @@ export class NotebookProvider implements vscode.NotebookSerializer {
 function parseClojure(content: string): vscode.NotebookCellData[] {
   const cursor = tokenCursor.createStringCursor(content);
   const topLevelRanges = cursor.rangesForTopLevelForms().flat();
-  if (topLevelRanges.length) {
-    topLevelRanges[0] = 0;
-  }
-
-  // grab only the ends of ranges, so we can include all of the file in the notebook
-  const fullRanges = _.filter(topLevelRanges, (_, index) => {
-    return index % 2 !== 0;
-  });
 
   // last range should include end of file
-  fullRanges[fullRanges.length - 1] = content.length;
+  topLevelRanges.push(content.length);
 
-  // start of file to end of top level sexp pairs
-  const allRanges = _.zip(_.dropRight([_.first(topLevelRanges), ...fullRanges], 1), fullRanges);
+  const allRanges = _.zip(_.dropRight([0, ...topLevelRanges], 1), topLevelRanges);
 
-  const ranges = allRanges.map(([start, end]) => {
-    return {
-      value: content.substring(start, end),
-      kind: vscode.NotebookCellKind.Code,
-      languageId: 'clojure',
-    };
-  });
+  const ranges = allRanges
+    .map(([start, end], index) => {
+      const isWhitespace = index % 2 === 0;
+      const rangeContent = content.substring(start, end);
+
+      if (isWhitespace) {
+        if (start === end) {
+          return {
+            value: '',
+            kind: vscode.NotebookCellKind.Markup,
+            languageId: 'markdown',
+          };
+        }
+
+        if (rangeContent.startsWith('\n\n;; ')) {
+          const startingWhitespace = rangeContent.indexOf('\n;; ');
+          const endingWhitespace = rangeContent.length - rangeContent.trimEnd().length;
+
+          return {
+            value: rangeContent.substring(startingWhitespace).trimEnd().replace(/\n;; /g, '\n'),
+            kind: vscode.NotebookCellKind.Markup,
+            languageId: 'markdown',
+            metadata: { asMarkdown: true, startingWhitespace, endingWhitespace },
+          };
+        }
+
+        return {
+          value: rangeContent,
+          kind: vscode.NotebookCellKind.Markup,
+          languageId: 'markdown',
+        };
+      } else {
+        return {
+          value: rangeContent,
+          kind: vscode.NotebookCellKind.Code,
+          languageId: 'clojure',
+        };
+      }
+    })
+    .filter((x) => x.value.length);
+
   return ranges;
 }
 
 function writeCellsToClojure(cells: vscode.NotebookCellData[]) {
-  return cells.map((x) => x.value).join('');
+  return cells
+    .map((x, index) => {
+      if (x.kind === vscode.NotebookCellKind.Code) {
+        return x.value;
+      } else {
+        if (x.metadata.asMarkdown) {
+          return (
+            '\n'.repeat(x.metadata.startingWhitespace) +
+            x.value.replace(/\n/g, '\n;; ') +
+            '\n'.repeat(x.metadata.endingWhitespace)
+          );
+        }
+        return x.value;
+      }
+    })
+    .join('');
 }
 
 export class NotebookKernel {
